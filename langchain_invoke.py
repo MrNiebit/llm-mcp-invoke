@@ -5,6 +5,9 @@ from mcp.client.stdio import stdio_client
 from langchain_mcp_adapters.tools import load_mcp_tools
 from langgraph.prebuilt import create_react_agent
 import os
+import logging
+logging.basicConfig(level=logging.DEBUG)
+
 from dotenv import load_dotenv
 load_dotenv(".env")
 
@@ -40,7 +43,7 @@ async def run():
                 print("AI思考中...")
                 # 使用流式输出替代一次性输出
                 print("AI: ", end="", flush=True)
-                async for chunk in agent.astream({"messages": user_input}):
+                async for chunk in agent.astream({"messages": user_input}, debug=True):
                     # print("chunk: ", chunk)
                     # message = chunk["messages"][:-1]
                     # 从正确的嵌套结构中提取消息内容
