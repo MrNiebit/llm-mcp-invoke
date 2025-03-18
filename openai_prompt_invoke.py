@@ -11,6 +11,7 @@ from mcp.client.stdio import stdio_client
 import sys
 from textwrap import dedent
 import json
+import re
 
 
 server_params = StdioServerParameters(
@@ -83,12 +84,36 @@ SYSTEM_PROMPT = """
 """
 
 
+def extract_json(text: str, trigger: str = "</think>") -> dict:
+    json_content = None
+    try:
+        # Locate trigger and extract content
+        if trigger in text:
+            start_idx = text.index(trigger) + len(trigger)
+            json_content = text[start_idx:].strip()
+        else:
+            json_content = text
+        # Remove code block markers
+        json_content = json_content.lstrip("```json").rstrip("```").strip()
+
+        # Handle escaped newlines if needed
+        json_content = json_content.replace(r"\n", "")
+
+        return json.loads(json_content)
+
+    except ValueError as e:
+        raise ValueError(f"Trigger '{trigger}' not found in text") from e
+    except json.JSONDecodeError as e:
+        print(f"Invalid JSON content: {json_content}")
+        raise
+
+
 async def main():
     print("欢迎使用基于OpenAI的聊天机器人！输入'退出'结束对话。")
 
     # 保存对话历史
     messages = [
-        {"role": "system", "content": "你是一个有帮助的助手，可以回答问题并调用工具获取信息。"}
+        {"role": "system", "content": "你是一个有帮助的助手，你可以通过上下文内容来回答用户的问题"}
     ]
     async with stdio_client(server_params) as (read, write):
         async with ClientSession(read, write) as session:
@@ -121,17 +146,20 @@ async def main():
                     messages=[{"role": "system", "content": prompt}, {"role": "user", "content": user_input}],
                     # 不使用stream=True
                 )
-                messages.append({"role": "user", "content": user_input})
                 response_message = response.choices[0].message
                 print(response_message)
                 try:
-                    response_str_dict = json.loads(response_message.content)
+                    json_data = extract_json(response_message.content)
+                    print("json_data:", json_data)
+                    if not json_data:
+                        json_data = json.load(response_message.content)
+                    # 使用正则表达式查找JSON部分
                     # 检查是否需要调用工具
-                    if "direct_answer" != response_str_dict.get("action").get("type"):
+                    if "direct_answer" != json_data.get("action").get("type"):
                         # 处理工具调用
                         print("\n[系统] 检测到工具调用，正在处理...")
-                        function_name = response_str_dict.get("action").get("tool_name")
-                        function_args = response_str_dict.get("action").get("parameters")
+                        function_name = json_data.get("action").get("tool_name")
+                        function_args = json_data.get("action").get("parameters")
 
                         # 处理每个工具调用
                         # tool_calls=[ChatCompletionMessageToolCall(id='call_6ffjtt37', function=Function(arguments='{"location":"杭州"}', name='get_current_weather'), type='function', index=0)])
@@ -143,7 +171,7 @@ async def main():
                         # 调用相应的函数
                         # 将函数调用结果添加到消息历史
                         messages.append({
-                            "role": "tool",
+                            "role": "assistant",
                             "name": function_name,
                             "content": json.dumps(response_str_list, ensure_ascii=False)
                         })
@@ -153,7 +181,7 @@ async def main():
                         sys.stdout.write("助手: ")
                 except:
                     pass
-
+                messages.append({"role": "user", "content": user_input})
                 second_stream = client.chat.completions.create(
                     model=os.environ.get("CHAT_MODEL"),
                     messages=messages,
