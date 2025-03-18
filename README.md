@@ -38,3 +38,5 @@ uv run xxx.py
 4、将用户问题+MCP返回的结果传入LLM中，让LLM给予最终响应
 
 > 这种兼容所有的模型，不需要模型支持工具调用
+
+`openai_prompt_invoke.py` 就是模仿该思路调用MCP
